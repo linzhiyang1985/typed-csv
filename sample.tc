@@ -1,0 +1,10 @@
+name:str=default|Unknown,age:int=default|6,weight:float=default|60.25,join_date:datetime=strptime|%Y-%m-%d
+John,24,63.21,1999-02-15
+Lucy,23,58,2000-07-28
+,,,NA
+
+country,province=default|NA,city,population:int=default|0
+China,Guangdong,Guangzhou,1000000
+China,Guangxi,Guilin,200000
+America,,NewYork,300000
+
