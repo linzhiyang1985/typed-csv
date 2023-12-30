@@ -1,20 +1,32 @@
 import datetime
-from csv import reader
+from csv import reader, writer
 import re
 from collections import namedtuple
 import decimal
 
+'''
+Header structure is to store the parsed header cell definition.
+It includes:
+ name: textual name of the column,
+ type_func: type casting function object and
+ convert_func_args: pre-processing function and arguments definition in string.
+'''
+Header = namedtuple('Header', ['name', 'type_func', 'convert_func_args'])
+
+
+def error_wrapper(func):
+    def wrapped(self, value, *args, **kwargs):
+        try:
+            return func(self, value, *args, **kwargs)
+        except (ValueError,TypeError) as err:
+            if self._ignore_value_error:
+                return value
+            else:
+                raise
+
+    return wrapped
 
 class TypedCsvReader:
-    '''
-    Header structure is to store the parsed header cell definition.
-    It includes:
-     name: textual name of the column,
-     type_func: type casting function object and
-     convert_func_args: pre-processing function and arguments definition in string.
-    '''
-    Header = namedtuple('Header', ['name', 'type_func', 'convert_func_args'])
-
     def __init__(self, f, dialect='excel', ignore_value_error=False, *args, **kwargs):
         '''
 
@@ -67,10 +79,11 @@ class TypedCsvReader:
         :param header_row: an raw row list
         :return:
         '''
+        global Header
         self._headers = []
         for header_def in header_row:
             name, type_func, convert_func_args = self.parse_header(header_def)
-            self._headers.append(TypedCsvReader.Header(name, type_func, convert_func_args))
+            self._headers.append(Header(name, type_func, convert_func_args))
         self._headernames = [header.name for header in self._headers] # update
         self._table_index += 1 # update
 
@@ -160,18 +173,6 @@ class TypedCsvReader:
             # otherwise, no change to the original value
             return original_value
 
-    def error_wrapper(func):
-        def wrapped(self, value, *args, **kwargs):
-            try:
-                return func(self, value, *args, **kwargs)
-            except ValueError as err:
-                if self._ignore_value_error:
-                    return value
-                else:
-                    raise
-
-        return wrapped
-
     @error_wrapper
     def int(self, value, base='10'):
         return int(value, int(base))
@@ -202,10 +203,74 @@ class TypedCsvReader:
 
     #### end of type/convert functions ####
 
+class TypedCsvWriter:
+    def __init__(self, f, dialet="excel", ignore_value_error=True, *args, **kwargs):
+        self.writer = writer(f, dialet, *args, **kwargs)
+        self.current_header_names = []
+        self._ignore_value_error = True
 
+    def _stringify_header(self, header_struct):
+        type_func_name = ''
+        if header_struct.type_func:
+            if isinstance(header_struct.type_func, str):
+                type_func_name = ':' + header_struct.type_func
+            else:
+                print(super().__dict__.keys())
+                for key, func_obj in self.__dict__.items():
+                    if func_obj == header_struct.type_func:
+                        type_func_name = ':' + key
+                        break
 
-# if __name__ == '__main__':
-#    with open('sample.tc', 'r') as fp:
-#        reader = TypedCsvReader(fp, ignore_value_error=True)
-#        for row in reader:
-#            print(reader.table_index, row)
+        convert_func_args = ''
+        if header_struct.convert_func_args:
+            convert_func_args = '=' + header_struct.convert_func_args
+
+        head_cell_str = f'{header_struct.name}{type_func_name}{convert_func_args}'
+        return head_cell_str
+
+    def writeheader(self, header_struct_list):
+        self._headers = {}
+        header_row = []
+        for header in header_struct_list:
+            self._headers[header.name] = header
+            header_def_str = self._stringify_header(header)
+            header_row.append(header_def_str)
+        self.current_header_names = [header.name for header in header_struct_list]
+        self.writer.writerow(header_row)
+
+    def write_empty_row(self):
+        self.writer.writerow([])
+
+    #### convert functions ####
+    @error_wrapper
+    def strftime(self, value, format):
+        return datetime.datetime.strftime(value, format)
+
+    #### end of convert functions ####
+
+    def writerow(self, rowdict, value_stringify_func_args={}):
+        '''
+        stringify value dict, write to file
+        :param rowdict: a dict of column name - value
+        :param value_stringify_func_args: separated by "|", first section is the name of the function to be call
+        and such function must accept value as its first parameter
+        :return: None
+        '''
+        row_values = []
+        for name in rowdict:
+            if name in value_stringify_func_args:
+                stringify_definition = value_stringify_func_args[name]
+                convert_func, *args = stringify_definition.split('|')
+                if hasattr(self, convert_func):
+                    value = getattr(self, convert_func)(rowdict[name], *args)
+                else:
+                    raise AttributeError("convert function %r is not defined" % (convert_func,))
+                    value = str(rowdicts[name])
+            else:
+                value = str(rowdict[name])
+            row_values.append(value)
+        self.writer.writerow(row_values)
+
+    def writerows(self, rowdicts, value_stringify_func_args={}):
+        for rowdict in rowdicts:
+            self.writerow(rowdict, value_stringify_func_args)

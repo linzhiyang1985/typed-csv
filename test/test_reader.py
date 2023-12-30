@@ -1,6 +1,6 @@
 import datetime
 
-from typedcsv import TypedCsvReader
+from typedcsv.typedcsv import TypedCsvReader
 
 def test_load_sample():
     with open('../sample.tc', 'r') as fp:
